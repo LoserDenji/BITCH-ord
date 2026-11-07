@@ -3,26 +3,27 @@
 import type { LtState } from './api';
 
 export const lt = $state<LtState>({
-	status: 'disconnected',
-	role: 'none',
-	requesting: false,
-	roomCode: null,
-	myId: null,
-	serverUrl: '',
-	defaultServerUrl: '',
-	users: [],
-	currentTrack: null,
-	queue: [],
-	pendingJoins: [],
-	suggestions: []
+        status: 'disconnected',
+        role: 'none',
+        requesting: false,
+        serverKind: 'limusic',
+        roomCode: null,
+        myId: null,
+        serverUrl: '',
+        defaultServerUrl: '',
+        users: [],
+        currentTrack: null,
+        queue: [],
+        pendingJoins: [],
+        suggestions: []
 });
 
 /** True when we're in (or joining) a room. */
 export function inRoom(): boolean {
-	return lt.role !== 'none';
+        return lt.role !== 'none';
 }
 
 /** Replace the reactive state from a fresh `lt-state` snapshot. */
 export function applyLtState(s: LtState) {
-	Object.assign(lt, s);
+        Object.assign(lt, s);
 }

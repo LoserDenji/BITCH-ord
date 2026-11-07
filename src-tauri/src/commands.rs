@@ -242,7 +242,7 @@ pub async fn get_queue(state: St<'_>) -> Result<serde_json::Value, String> {
 /// `visitor_data`) and internal blobs (`queue_json`, `queue_index`, `queue_position`) never cross
 /// into the webview: they'd otherwise ship the login credential to the renderer on every open, and
 /// the webview can't overwrite them either.
-const UI_SETTINGS: [&str; 33] = [
+const UI_SETTINGS: [&str; 34] = [
     "volume",
     "proxy",
     "quality",
@@ -276,6 +276,8 @@ const UI_SETTINGS: [&str; 33] = [
     "crossfade",
     "crossfade_secs",
     "locale",
+    "island_enabled",
+    "player_style",
 ];
 
 /// Resolve the music video for `video_id` and hand back a `limusicvideo://` URL the player view
@@ -504,6 +506,11 @@ pub async fn set_setting(
         if let Some(w) = app.get_webview_window("main") {
             w.set_decorations(value == "true").map_err(|e| format!("decorations: {e}"))?;
         }
+    }
+    // The Dynamic Island is built/torn down the moment the switch flips, like every other
+    // always-running shell feature (autostart, discord_rpc).
+    if key == "island_enabled" {
+        crate::island::apply_enabled(&app);
     }
     Ok(())
 }
@@ -777,6 +784,80 @@ pub async fn close_mini(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_mini_compact(app: tauri::AppHandle, compact: bool) -> Result<(), String> {
     crate::mini::set_compact(&app, compact)
+}
+
+// --- dynamic island (island.rs) --------------------------------------------------------------
+
+/// Build (or re-show) the overlay. GTK wants window creation on the main thread, so hop and post
+/// the result back, exactly like `open_mini`. The settings toggle lands here too (via
+/// `island::apply_enabled`), which is why the standalone command exists at all.
+#[tauri::command]
+pub async fn open_island(app: tauri::AppHandle) -> Result<(), String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(crate::island::create(&handle));
+    })
+    .map_err(|e| e.to_string())?;
+    rx.await.map_err(|_| "the dynamic island never answered".to_string())?
+}
+
+/// The island's transport presses. Same AppState calls the tray menu items make, so the island, the
+/// tray and the media keys can't disagree about what play/pause means. `action` ∈ "play" | "pause"
+/// | "toggle" | "nexttrack" | "previoustrack" | "seekto" | "open"; `arg` carries the seek target
+/// in seconds.
+#[tauri::command]
+pub async fn island_action(
+    app: tauri::AppHandle,
+    state: St<'_>,
+    action: String,
+    arg: Option<f64>,
+) -> Result<(), String> {
+    match action.as_str() {
+        "open" => crate::tray::show_main(&app),
+        "toggle" => state.resume_or_toggle().await,
+        "play" => {
+            if state.is_paused() {
+                state.resume_or_toggle().await;
+            }
+        }
+        "pause" => {
+            if !state.is_paused() {
+                state.resume_or_toggle().await;
+            }
+        }
+        "nexttrack" => state.inner().clone().next_in_queue().await,
+        "previoustrack" => state.inner().clone().prev_in_queue().await,
+        "seekto" => {
+            let seconds = arg.unwrap_or(0.0).max(0.0);
+            state.user_seek(seconds).await?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// The island's one boot-time ask: is the main window focused right now? Covers an island created
+/// while the app is already in the background (the settings toggle, or a session restored to the
+/// tray) — without it the page would optimistically stay hidden until the next Focused event.
+#[tauri::command]
+pub async fn island_focus_state(app: tauri::AppHandle) -> Result<bool, String> {
+    let _ = &app;
+    Ok(crate::island::main_focused())
+}
+
+/// The page asked the OS window to hug the expanded card (or shrink back to the pill).
+#[tauri::command]
+pub async fn island_resize(app: tauri::AppHandle, expanded: bool) -> Result<(), String> {
+    crate::island::apply_size(&app, expanded);
+    Ok(())
+}
+
+/// The card folded away (or came back): hand the hidden rectangle to the desktop, or take it back.
+#[tauri::command]
+pub async fn island_overlay(app: tauri::AppHandle, hidden: bool) -> Result<(), String> {
+    crate::island::set_click_through(&app, hidden);
+    Ok(())
 }
 
 /// The arguments this process was launched with, handed over once (#348). See `LAUNCH_ARGS`.
@@ -2356,6 +2437,22 @@ pub async fn lt_set_server_url(state: St<'_>, url: String) -> Result<(), String>
     let url = url.trim().to_string();
     state.db.set_setting("lt_server_url", &url);
     state.lt.set_server_url(url).await;
+    Ok(())
+}
+
+/// Which Listen Together protocol the next room speaks: limusic's own relay, or the BitChord party
+/// server (listentogether/bitchord.rs), so limusic can sit in the rooms BitChord players host.
+/// `kind` ∈ "limusic" | "bitchord". Like `lt_server_url`, this key stays out of `UI_SETTINGS` — it
+/// has its own command and must not be written by anything else.
+#[tauri::command]
+pub async fn lt_set_server_kind(state: St<'_>, kind: String) -> Result<(), String> {
+    let parsed = crate::listentogether::ServerKind::from_setting(Some(kind.as_str()));
+    if parsed.as_str() != kind {
+        return Err(format!("unknown listen-together server kind: {kind}"));
+    }
+    // set_kind refuses mid-room; the dialog disables the pick there, and the error surfaces it.
+    state.lt.set_kind(parsed).await?;
+    state.db.set_setting("lt_server_kind", kind.as_str());
     Ok(())
 }
 

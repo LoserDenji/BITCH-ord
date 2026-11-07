@@ -11,6 +11,7 @@ mod discord;
 mod hotkeys;
 mod http;
 mod import;
+mod island;
 #[cfg(target_os = "linux")]
 mod inhibit;
 mod lastfm;
@@ -900,6 +901,13 @@ pub fn run() {
             // URL does not live here so that nothing ever has to hand it to the UI.
             let lt_url = db.get_setting("lt_server_url").unwrap_or_default();
             let (lt, lt_sync_rx) = listentogether::LtSession::new(handle.clone(), lt_url);
+            // Which protocol the next room speaks (the relay, or BitChord's party server —
+            // listentogether/bitchord.rs). Nothing is in a room at startup, so the mid-room guard
+            // in `set_kind` is moot here. Setup is sync; the session's lock has no contender yet.
+            let lt_kind = listentogether::ServerKind::from_setting(
+                db.get_setting("lt_server_kind").as_deref(),
+            );
+            tauri::async_runtime::block_on(lt.set_kind(lt_kind)).ok();
 
             let app_state = Arc::new(AppState::new(
                 it,
@@ -951,6 +959,11 @@ pub fn run() {
                 tracing::warn!(error = %e, "tray init failed (continuing without tray)");
                 tray::set_available(false);
             }
+
+            // The Dynamic Island overlay (island.rs): a third webview showing the now-playing card
+            // while the app is in the background. Built here, on the main thread setup already runs
+            // on; a failure is a missing overlay, never a dead app.
+            island::init(&handle);
 
             // System-wide global hotkeys for playback control
             let hotkeys_cfg = hotkeys::load_config(&app_state.db);
@@ -1208,6 +1221,11 @@ pub fn run() {
             commands::open_mini,
             commands::close_mini,
             commands::set_mini_compact,
+            commands::open_island,
+            commands::island_action,
+            commands::island_focus_state,
+            commands::island_resize,
+            commands::island_overlay,
             commands::show_main,
             commands::take_launch_args,
             commands::get_home,
@@ -1279,6 +1297,7 @@ pub fn run() {
             commands::import_resolve,
             commands::lt_get_state,
             commands::lt_set_server_url,
+            commands::lt_set_server_kind,
             commands::lt_create_room,
             commands::lt_join_room,
             commands::lt_leave,
@@ -1340,7 +1359,21 @@ pub fn run() {
                         api.prevent_close();
                         tray::show_main(window.app_handle());
                     }
+                    // The island is never really closed either — a WM shortcut that asks it to close
+                    // just folds it. It re-decides what to show on its next sync/focus push.
+                    island::LABEL => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        island::set_click_through(window.app_handle(), true);
+                    }
                     _ => {}
+                }
+            }
+            // The island's whole reason to exist is a glance away from the app, so every focus
+            // change of the main window is pushed to it (island.rs::notify_main_focus).
+            if let tauri::WindowEvent::Focused(focused) = event {
+                if window.label() == "main" {
+                    island::notify_main_focus(window.app_handle(), *focused);
                 }
             }
         })
@@ -1380,7 +1413,10 @@ fn only_ui<R: tauri::Runtime>(
     handler: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
 ) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     move |invoke| {
-        if matches!(invoke.message.webview_ref().label(), "main" | mini::LABEL) {
+        if matches!(
+            invoke.message.webview_ref().label(),
+            "main" | mini::LABEL | island::LABEL
+        ) {
             return handler(invoke);
         }
         invoke.resolver.reject("not allowed from this webview");
@@ -1529,7 +1565,9 @@ mod tests {
             .invoke_handler(super::only_ui(tauri::generate_handler![ping]))
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
-        for (label, allowed) in [("main", true), ("mini", true), ("cipher", false)] {
+        for (label, allowed) in
+            [("main", true), ("mini", true), ("island", true), ("cipher", false)]
+        {
             let wv =
                 tauri::WebviewWindowBuilder::new(&app, label, Default::default()).build().unwrap();
             let res = tauri::test::get_ipc_response(

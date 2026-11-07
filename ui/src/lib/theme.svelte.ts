@@ -18,69 +18,71 @@ import { logUi } from './errlog';
 import { hexToHsv, hexToOklch, isLight } from './color';
 import { artworkAccent, toAccent, warmAccent } from './artcolor';
 import {
-	allowFontFile,
-	getMatugenTheme,
-	onMatugenThemeChanged,
-	startMatugenWatcher,
-	stopMatugenWatcher
+        allowFontFile,
+        getMatugenTheme,
+        onMatugenThemeChanged,
+        startMatugenWatcher,
+        stopMatugenWatcher
 } from './api';
 
 export type ThemeId =
-	| 'default'
-	| 'catppuccin'
-	| 'tokyonight'
-	| 'caffeine'
-	| 'neon'
-	| 'breeze'
-	| 'amoled'
-	| 'material';
+        | 'default'
+        | 'catppuccin'
+        | 'tokyonight'
+        | 'caffeine'
+        | 'neon'
+        | 'breeze'
+        | 'amoled'
+        | 'material'
+        | 'bitchord';
 
 // `color` is just the picker swatch.
 type Theme = { id: ThemeId; label: string; color: string };
 
 export const THEMES: Theme[] = [
-	{ id: 'default', label: 'Default', color: 'oklch(0.514 0.222 16.935)' },
-	{ id: 'catppuccin', label: 'Catppuccin', color: 'oklch(0.5547 0.2503 297.0156)' },
-	{ id: 'tokyonight', label: 'Tokyo Night', color: 'oklch(0.3593 0.0513 273.1802)' },
-	{ id: 'caffeine', label: 'Caffeine', color: 'oklch(0.4341 0.0392 41.9938)' },
-	{ id: 'neon', label: 'Neon', color: 'oklch(0.6726 0.2904 341.4084)' },
-	{ id: 'breeze', label: 'Breeze', color: 'oklch(0.7227 0.1920 149.5793)' },
-	{ id: 'amoled', label: 'AMOLED', color: 'oklch(0 0 0)' },
-	{ id: 'material', label: 'Material You', color: 'oklch(0.4955 0.1305 293.7091)' }
+        { id: 'default', label: 'Default', color: 'oklch(0.514 0.222 16.935)' },
+        { id: 'catppuccin', label: 'Catppuccin', color: 'oklch(0.5547 0.2503 297.0156)' },
+        { id: 'tokyonight', label: 'Tokyo Night', color: 'oklch(0.3593 0.0513 273.1802)' },
+        { id: 'caffeine', label: 'Caffeine', color: 'oklch(0.4341 0.0392 41.9938)' },
+        { id: 'neon', label: 'Neon', color: 'oklch(0.6726 0.2904 341.4084)' },
+        { id: 'breeze', label: 'Breeze', color: 'oklch(0.7227 0.1920 149.5793)' },
+        { id: 'amoled', label: 'AMOLED', color: 'oklch(0 0 0)' },
+        { id: 'material', label: 'Material You', color: 'oklch(0.4955 0.1305 293.7091)' },
+        { id: 'bitchord', label: 'BitChord', color: '#fa586a' }
 ];
 
 // A removed accent preset falls back to the default palette, carrying its colour over as a custom
 // accent so someone who picked Blue stays blue. Rose was the default palette's own colour, so it
 // carries nothing over. Hex, because that is what the custom accent layer stores.
 const LEGACY_ACCENTS: Record<string, string | null> = {
-	rose: null,
-	blue: '#1a4eda',
-	lime: '#85cc23',
-	purple: '#9336ea',
-	teal: '#54e9d2'
+        rose: null,
+        blue: '#1a4eda',
+        lime: '#85cc23',
+        purple: '#9336ea',
+        teal: '#54e9d2'
 };
 
 /** Font stacks bundled with the app (imported in layout.css). "System" needs no download. */
 export const FONTS: { label: string; value: string }[] = [
-	{ label: 'Oxanium', value: "'Oxanium Variable', sans-serif" },
-	{ label: 'IBM Plex Sans', value: "'IBM Plex Sans Variable', sans-serif" },
-	{ label: 'Montserrat', value: "'Montserrat Variable', sans-serif" },
-	{ label: 'Outfit', value: "'Outfit Variable', sans-serif" },
-	{ label: 'DM Sans', value: "'DM Sans Variable', sans-serif" },
-	{ label: 'Google Sans', value: "'Google Sans Variable', sans-serif" },
-	{ label: 'System', value: 'ui-sans-serif, system-ui, sans-serif' }
+        { label: 'Oxanium', value: "'Oxanium Variable', sans-serif" },
+        { label: 'IBM Plex Sans', value: "'IBM Plex Sans Variable', sans-serif" },
+        { label: 'Montserrat', value: "'Montserrat Variable', sans-serif" },
+        { label: 'Outfit', value: "'Outfit Variable', sans-serif" },
+        { label: 'DM Sans', value: "'DM Sans Variable', sans-serif" },
+        { label: 'Google Sans', value: "'Google Sans Variable', sans-serif" },
+        { label: 'System', value: 'ui-sans-serif, system-ui, sans-serif' }
 ];
 
 /** The custom layer. `null` = untouched, so the selected preset decides. */
 export type Custom = {
-	accent: string | null; // hex
-	hue: number | null; // 0–360, tints the default palette's neutrals
-	radius: number | null; // rem
-	fontSans: string | null; // a CSS font-family value
-	fontHeading: string | null;
-	// Font files the user loaded from disk, by absolute path. Not an override — a small library that
-	// both font rows can then choose from, which is why `resetCustom` leaves it alone.
-	fontFiles: string[];
+        accent: string | null; // hex
+        hue: number | null; // 0–360, tints the default palette's neutrals
+        radius: number | null; // rem
+        fontSans: string | null; // a CSS font-family value
+        fontHeading: string | null;
+        // Font files the user loaded from disk, by absolute path. Not an override — a small library that
+        // both font rows can then choose from, which is why `resetCustom` leaves it alone.
+        fontFiles: string[];
 };
 
 const KEY = 'primary-theme';
@@ -100,21 +102,21 @@ const ON_LIGHT = 'oklch(0.205 0 0)';
 /** Reactive current selection, so the picker reflects it. */
 export const theme = $state<{ id: ThemeId }>({ id: 'default' });
 export const custom = $state<Custom>({
-	accent: null,
-	hue: null,
-	radius: null,
-	fontSans: null,
-	fontHeading: null,
-	fontFiles: []
+        accent: null,
+        hue: null,
+        radius: null,
+        fontSans: null,
+        fontHeading: null,
+        fontFiles: []
 });
 
 /** Enhanced lyrics' tuning (#591), what each reset icon in its settings card puts back. */
 export const LYRICS_DEFAULTS = {
-	enhancedLyricsLineSync: false,
-	lyricsAnim: 'bounce' as LyricsAnim,
-	lyricsStyle: 'feather' as LyricsStyle,
-	lyricsAnimStrength: 100,
-	lyricsGlow: 50
+        enhancedLyricsLineSync: false,
+        lyricsAnim: 'bounce' as LyricsAnim,
+        lyricsStyle: 'feather' as LyricsStyle,
+        lyricsAnimStrength: 100,
+        lyricsGlow: 50
 };
 
 /**
@@ -123,49 +125,57 @@ export const LYRICS_DEFAULTS = {
  * read it during its first render instead of flashing the default while a command round-trips.
  */
 export const appearance = $state({
-	/** Blur the playing track's artwork behind the now-playing view. */
-	artworkBackground: true,
-	/** Blur the cover behind a playlist's header. Sharp, a square cover stretched to the page's
-	 *  width is often too small for it and shows its pixels (#461). */
-	blurPlaylistHeader: false,
-	/** The "Now playing" pill a list floats over its rows while the playing one is off screen, in
-	 *  the queue and on a playlist (#366). Off for whoever finds it in the way. */
-	nowPlayingPill: true,
-	/** The original now-playing view, before the redesign (title and album under the picture, a
-	 *  lit backdrop, a full-height queue/lyrics column) became the default. A new key rather than
-	 *  `stagePlayer` flipped: that one was saved as `false` for everyone, so a new default would
-	 *  never have reached them. */
-	classicPlayer: false,
-	/**
-	 * The now-playing view carries queue and lyrics itself, as tabs, and the player bar's two
-	 * buttons switch between them while it's open. Off, those buttons only ever open the floating
-	 * side panels, which then sit over the now-playing view like they sit over a page (#62).
-	 */
-	tabbedPlayer: true,
-	/** Starting playback opens the now-playing view. Off, it plays and leaves you where you are (#64). */
-	openPlayerOnPlay: true,
-	/** A click on empty player-bar space toggles the now-playing view, and one around the artwork
-	 *  closes it (#302). Off, only the buttons and shortcuts do, for whoever trips it by accident. */
-	emptyClickTogglesPlayer: true,
-	/** Take the accent colour from the playing track's cover, crossfading on each change. */
-	artworkAccent: false,
-	/** Theater mode's second and third columns (#297). Sticky, like every view toggle. */
-	theaterLyrics: true,
-	theaterQueue: false,
-	/** Derive the whole palette from Matugen. Off by default. */
-	matugen: false,
-	enhancedLyrics: false,
-	...LYRICS_DEFAULTS
+        /** Blur the playing track's artwork behind the now-playing view. */
+        artworkBackground: true,
+        /** Blur the cover behind a playlist's header. Sharp, a square cover stretched to the page's
+         *  width is often too small for it and shows its pixels (#461). */
+        blurPlaylistHeader: false,
+        /** The "Now playing" pill a list floats over its rows while the playing one is off screen, in
+         *  the queue and on a playlist (#366). Off for whoever finds it in the way. */
+        nowPlayingPill: true,
+        /** The original now-playing view, before the redesign (title and album under the picture, a
+         *  lit backdrop, a full-height queue/lyrics column) became the default. A new key rather than
+         *  `stagePlayer` flipped: that one was saved as `false` for everyone, so a new default would
+         *  never have reached them. */
+        classicPlayer: false,
+        /**
+         * The now-playing view carries queue and lyrics itself, as tabs, and the player bar's two
+         * buttons switch between them while it's open. Off, those buttons only ever open the floating
+         * side panels, which then sit over the now-playing view like they sit over a page (#62).
+         */
+        tabbedPlayer: true,
+        /** Starting playback opens the now-playing view. Off, it plays and leaves you where you are (#64). */
+        openPlayerOnPlay: true,
+        /** A click on empty player-bar space toggles the now-playing view, and one around the artwork
+         *  closes it (#302). Off, only the buttons and shortcuts do, for whoever trips it by accident. */
+        emptyClickTogglesPlayer: true,
+        /** Take the accent colour from the playing track's cover, crossfading on each change. */
+        artworkAccent: false,
+        /** Theater mode's second and third columns (#297). Sticky, like every view toggle. */
+        theaterLyrics: true,
+        theaterQueue: false,
+        /** Derive the whole palette from Matugen. Off by default. */
+        matugen: false,
+        enhancedLyrics: false,
+        ...LYRICS_DEFAULTS
 });
 
-export type LyricsAnim = 'bounce' | 'float' | 'wave' | 'pop' | 'slide' | 'none';
+export type LyricsAnim = 'bounce' | 'float' | 'wave' | 'pop' | 'slide' | 'wipe' | 'none';
 export type LyricsStyle = 'feather' | 'accent' | 'crisp' | 'word';
-export const LYRICS_ANIMS: LyricsAnim[] = ['bounce', 'float', 'wave', 'pop', 'slide', 'none'];
+export const LYRICS_ANIMS: LyricsAnim[] = [
+        'bounce',
+        'float',
+        'wave',
+        'pop',
+        'slide',
+        'wipe',
+        'none'
+];
 export const LYRICS_STYLES: LyricsStyle[] = ['feather', 'accent', 'crisp', 'word'];
 
 export function setAppearance(patch: Partial<typeof appearance>): void {
-	Object.assign(appearance, patch);
-	localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
+        Object.assign(appearance, patch);
+        localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
 }
 
 /**
@@ -174,11 +184,11 @@ export function setAppearance(patch: Partial<typeof appearance>): void {
  * hardcoded default that goes stale the moment a preset moves it.
  */
 export const effective = $state({
-	hue: 326,
-	radius: 0.45,
-	accent: '#000000',
-	fontSans: '',
-	fontHeading: ''
+        hue: 326,
+        radius: 0.45,
+        accent: '#000000',
+        fontSans: '',
+        fontHeading: ''
 });
 
 /**
@@ -190,20 +200,20 @@ export const effective = $state({
  */
 let scratch: CanvasRenderingContext2D | null | undefined;
 function toHex(color: string): string {
-	// One scratch canvas, reused. A fresh 2D context per call is a native allocation the JS heap
-	// measurement cannot see, and this runs on most track changes (via `applyArtworkAccent`).
-	if (scratch === undefined) {
-		const c = document.createElement('canvas');
-		c.width = c.height = 1;
-		scratch = c.getContext('2d', { willReadFrequently: true });
-	}
-	const ctx = scratch;
-	if (!ctx) return '#000000';
-	ctx.fillStyle = '#000000'; // stays, if the engine can't parse what comes next
-	ctx.fillStyle = color;
-	ctx.fillRect(0, 0, 1, 1);
-	const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-	return '#' + [r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('');
+        // One scratch canvas, reused. A fresh 2D context per call is a native allocation the JS heap
+        // measurement cannot see, and this runs on most track changes (via `applyArtworkAccent`).
+        if (scratch === undefined) {
+                const c = document.createElement('canvas');
+                c.width = c.height = 1;
+                scratch = c.getContext('2d', { willReadFrequently: true });
+        }
+        const ctx = scratch;
+        if (!ctx) return '#000000';
+        ctx.fillStyle = '#000000'; // stays, if the engine can't parse what comes next
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return '#' + [r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -211,93 +221,93 @@ function toHex(color: string): string {
  * light/dark doesn't route through here, and a palette's --primary differs between the two.
  */
 export function readBack(): void {
-	const cs = getComputedStyle(document.documentElement);
-	const g = (n: string) => cs.getPropertyValue(n).trim();
-	effective.hue = parseFloat(g('--hue')) || 0;
-	effective.radius = parseFloat(g('--radius')) || 0;
-	effective.accent = toHex(g('--primary'));
-	effective.fontSans = g('--font-sans');
-	effective.fontHeading = g('--font-heading');
+        const cs = getComputedStyle(document.documentElement);
+        const g = (n: string) => cs.getPropertyValue(n).trim();
+        effective.hue = parseFloat(g('--hue')) || 0;
+        effective.radius = parseFloat(g('--radius')) || 0;
+        effective.accent = toHex(g('--primary'));
+        effective.fontSans = g('--font-sans');
+        effective.fontHeading = g('--font-heading');
 }
 
 /** Text colour for an accent fill. Also used by `ThemeMock`, which mirrors `apply` on a leaf. */
 export const onAccent = (color: string) => (isLight(color) ? ON_LIGHT : ON_DARK);
 
 export function m3Seed(color: string | null): { h: string; c: string } | null {
-	const ok = color ? hexToOklch(color) : null;
-	if (!ok) return null;
-	return {
-		h: ok.h.toFixed(1),
-		c: Math.min(1.35, Math.max(0.15, ok.c / 0.1305)).toFixed(3)
-	};
+        const ok = color ? hexToOklch(color) : null;
+        if (!ok) return null;
+        return {
+                h: ok.h.toFixed(1),
+                c: Math.min(1.35, Math.max(0.15, ok.c / 0.1305)).toFixed(3)
+        };
 }
 
 /** Write the accent quartet as inline vars on <html>, foreground picked for legibility on it. */
 function setAccentVars(color: string): void {
-	const root = document.documentElement;
-	if (theme.id === 'material') {
-		const seed = m3Seed(color);
-		if (seed) {
-			root.style.setProperty('--m3-seed-h', seed.h);
-			root.style.setProperty('--m3-c', seed.c);
-			if (custom.hue === null) root.style.setProperty('--hue', seed.h);
-		}
-		return;
-	}
-	const fg = onAccent(color);
-	root.style.setProperty('--primary', color);
-	root.style.setProperty('--primary-foreground', fg);
-	root.style.setProperty('--accent', color);
-	root.style.setProperty('--accent-foreground', fg);
+        const root = document.documentElement;
+        if (theme.id === 'material') {
+                const seed = m3Seed(color);
+                if (seed) {
+                        root.style.setProperty('--m3-seed-h', seed.h);
+                        root.style.setProperty('--m3-c', seed.c);
+                        if (custom.hue === null) root.style.setProperty('--hue', seed.h);
+                }
+                return;
+        }
+        const fg = onAccent(color);
+        root.style.setProperty('--primary', color);
+        root.style.setProperty('--primary-foreground', fg);
+        root.style.setProperty('--accent', color);
+        root.style.setProperty('--accent-foreground', fg);
 }
 
 function apply(): void {
-	const t = THEMES.find((x) => x.id === theme.id) ?? THEMES[0];
-	const root = document.documentElement;
-	// Reset first, so switching palettes (or clearing a custom override) never leaves the previous
-	// choice's inline vars or class behind.
-	[...ACCENT_VARS, ...M3_SEED_VARS, ...CUSTOM_VARS, '--art-h'].forEach((v) =>
-		root.style.removeProperty(v)
-	);
-	root.classList.remove(...PALETTE_CLASSES, TINT_CLASS);
-	root.classList.add(`theme-${t.id}`); // 'default' has no rule: :root/.dark are its tokens
+        const t = THEMES.find((x) => x.id === theme.id) ?? THEMES[0];
+        const root = document.documentElement;
+        // Reset first, so switching palettes (or clearing a custom override) never leaves the previous
+        // choice's inline vars or class behind.
+        [...ACCENT_VARS, ...M3_SEED_VARS, ...CUSTOM_VARS, '--art-h'].forEach((v) =>
+                root.style.removeProperty(v)
+        );
+        root.classList.remove(...PALETTE_CLASSES, TINT_CLASS);
+        root.classList.add(`theme-${t.id}`); // 'default' has no rule: :root/.dark are its tokens
 
-	// The Matugen palette brings its own accent (its stylesheet sets it), so the custom one steps aside.
-	if (custom.accent && !appearance.matugen) setAccentVars(custom.accent);
-	// Last, so the artwork wins while it's on and the user's own theme is back the moment it isn't.
-	if (art) setArtVars(art);
-	if (custom.hue !== null && !(art && theme.id === 'material')) {
-		root.style.setProperty('--hue', String(custom.hue));
-	}
-	if (custom.radius !== null) root.style.setProperty('--radius', `${custom.radius}rem`);
-	if (custom.fontSans) root.style.setProperty('--font-sans', custom.fontSans);
-	if (custom.fontHeading) root.style.setProperty('--font-heading', custom.fontHeading);
+        // The Matugen palette brings its own accent (its stylesheet sets it), so the custom one steps aside.
+        if (custom.accent && !appearance.matugen) setAccentVars(custom.accent);
+        // Last, so the artwork wins while it's on and the user's own theme is back the moment it isn't.
+        if (art) setArtVars(art);
+        if (custom.hue !== null && !(art && theme.id === 'material')) {
+                root.style.setProperty('--hue', String(custom.hue));
+        }
+        if (custom.radius !== null) root.style.setProperty('--radius', `${custom.radius}rem`);
+        if (custom.fontSans) root.style.setProperty('--font-sans', custom.fontSans);
+        if (custom.fontHeading) root.style.setProperty('--font-heading', custom.fontHeading);
 
-	readBack();
+        readBack();
 }
 
 export function applyTheme(id: ThemeId): void {
-	theme.id = THEMES.some((t) => t.id === id) ? id : THEMES[0].id;
-	apply();
-	localStorage.setItem(KEY, theme.id);
+        theme.id = THEMES.some((t) => t.id === id) ? id : THEMES[0].id;
+        apply();
+        localStorage.setItem(KEY, theme.id);
 }
 
 const persist = () => localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom));
 
 export function setCustom(patch: Partial<Custom>): void {
-	Object.assign(custom, patch);
-	apply();
-	persist();
+        Object.assign(custom, patch);
+        apply();
+        persist();
 }
 
 /** Drops the overrides. Loaded font *files* stay: they're assets, not a setting. */
 export function resetCustom(): void {
-	setCustom({ accent: null, hue: null, radius: null, fontSans: null, fontHeading: null });
+        setCustom({ accent: null, hue: null, radius: null, fontSans: null, fontHeading: null });
 }
 
 /** True when nothing is overridden, so the UI can disable the reset. */
 export function isDefaultCustom(): boolean {
-	return !custom.accent && custom.hue === null && custom.radius === null && !custom.fontSans && !custom.fontHeading;
+        return !custom.accent && custom.hue === null && custom.radius === null && !custom.fontSans && !custom.fontHeading;
 }
 
 // --- Font files loaded from disk -------------------------------------------------------------
@@ -309,25 +319,25 @@ const FONT_STYLE_ID = 'custom-font-files';
 
 /** Family name for a loaded file: its base name, minus extension and anything CSS-unsafe. */
 export function fileFamily(path: string): string {
-	const base = path.split(/[\\/]/).pop() ?? path;
-	// ponytail: two files with the same name collide on one family — last one registered wins.
-	return base.replace(/\.[^.]+$/, '').replace(/[^\w \-]/g, '').trim() || 'Custom font';
+        const base = path.split(/[\\/]/).pop() ?? path;
+        // ponytail: two files with the same name collide on one family — last one registered wins.
+        return base.replace(/\.[^.]+$/, '').replace(/[^\w \-]/g, '').trim() || 'Custom font';
 }
 
 /** Loaded files as font-dropdown entries, so they sit alongside the bundled ones. */
 export function fileFonts(): { label: string; value: string }[] {
-	return custom.fontFiles.map((p) => ({
-		label: fileFamily(p),
-		value: `'${fileFamily(p)}', sans-serif`
-	}));
+        return custom.fontFiles.map((p) => ({
+                label: fileFamily(p),
+                value: `'${fileFamily(p)}', sans-serif`
+        }));
 }
 
 /** Drop a path from the library, and clear any font row still pointing at its family. */
 function forget(path: string): void {
-	custom.fontFiles = custom.fontFiles.filter((p) => p !== path);
-	const gone = `'${fileFamily(path)}', sans-serif`;
-	if (custom.fontSans === gone) custom.fontSans = null;
-	if (custom.fontHeading === gone) custom.fontHeading = null;
+        custom.fontFiles = custom.fontFiles.filter((p) => p !== path);
+        const gone = `'${fileFamily(path)}', sans-serif`;
+        if (custom.fontSans === gone) custom.fontSans = null;
+        if (custom.fontHeading === gone) custom.fontHeading = null;
 }
 
 /**
@@ -337,53 +347,53 @@ function forget(path: string): void {
  * silently renders the fallback. Runs at startup and whenever the settings modal opens.
  */
 export async function registerFontFiles(): Promise<void> {
-	const rules: string[] = [];
-	const missing: string[] = [];
-	for (const path of custom.fontFiles) {
-		try {
-			// Grant the URL before the rule exists: a font that 403s once is never retried.
-			await allowFontFile(path);
-		} catch {
-			missing.push(path);
-			continue;
-		}
-		rules.push(
-			`@font-face { font-family: '${fileFamily(path)}'; src: url('${convertFileSrc(path)}'); }`
-		);
-	}
-	if (missing.length) {
-		missing.forEach(forget);
-		persist();
-		apply(); // a row that pointed at a missing font falls back to the preset's, visibly
-	}
-	let el = document.getElementById(FONT_STYLE_ID);
-	if (!el) {
-		el = document.createElement('style');
-		el.id = FONT_STYLE_ID;
-		document.head.append(el);
-	}
-	el.textContent = rules.join('\n');
+        const rules: string[] = [];
+        const missing: string[] = [];
+        for (const path of custom.fontFiles) {
+                try {
+                        // Grant the URL before the rule exists: a font that 403s once is never retried.
+                        await allowFontFile(path);
+                } catch {
+                        missing.push(path);
+                        continue;
+                }
+                rules.push(
+                        `@font-face { font-family: '${fileFamily(path)}'; src: url('${convertFileSrc(path)}'); }`
+                );
+        }
+        if (missing.length) {
+                missing.forEach(forget);
+                persist();
+                apply(); // a row that pointed at a missing font falls back to the preset's, visibly
+        }
+        let el = document.getElementById(FONT_STYLE_ID);
+        if (!el) {
+                el = document.createElement('style');
+                el.id = FONT_STYLE_ID;
+                document.head.append(el);
+        }
+        el.textContent = rules.join('\n');
 }
 
 /** Load a font file the user picked. Throws (for the caller to report) if it can't be granted. */
 export async function addFontFile(path: string): Promise<string> {
-	await allowFontFile(path);
-	if (!custom.fontFiles.includes(path)) custom.fontFiles.push(path);
-	persist();
-	await registerFontFiles();
-	return fileFamily(path);
+        await allowFontFile(path);
+        if (!custom.fontFiles.includes(path)) custom.fontFiles.push(path);
+        persist();
+        await registerFontFiles();
+        return fileFamily(path);
 }
 
 export function removeFontFile(path: string): void {
-	forget(path);
-	persist();
-	apply();
-	registerFontFiles();
+        forget(path);
+        persist();
+        apply();
+        registerFontFiles();
 }
 
 /** First family in a font stack, unquoted — what the UI shows and matches on. */
 export function familyName(stack: string): string {
-	return (stack.split(',')[0] ?? '').replace(/["']/g, '').trim();
+        return (stack.split(',')[0] ?? '').replace(/["']/g, '').trim();
 }
 
 /**
@@ -392,13 +402,13 @@ export function familyName(stack: string): string {
  * hint next to the input, not a gate — the font is applied either way.
  */
 export function fontAvailable(name: string): boolean {
-	const ctx = document.createElement('canvas').getContext('2d');
-	if (!ctx || !name.trim()) return true;
-	const probe = 'mmmmmmmmmmlli';
-	ctx.font = '72px monospace';
-	const base = ctx.measureText(probe).width;
-	ctx.font = `72px "${name}", monospace`;
-	return ctx.measureText(probe).width !== base;
+        const ctx = document.createElement('canvas').getContext('2d');
+        if (!ctx || !name.trim()) return true;
+        const probe = 'mmmmmmmmmmlli';
+        ctx.font = '72px monospace';
+        const base = ctx.measureText(probe).width;
+        ctx.font = `72px "${name}", monospace`;
+        return ctx.measureText(probe).width !== base;
 }
 
 // --- Artwork colours --------------------------------------------------------------------------
@@ -435,19 +445,19 @@ let restyleWanted = false;
 
 /** Skip the artwork restyle while the window is hidden; run the last one when it comes back. */
 function restyle(): void {
-	if (!uiVisible) {
-		restyleWanted = true;
-		return;
-	}
-	apply();
+        if (!uiVisible) {
+                restyleWanted = true;
+                return;
+        }
+        apply();
 }
 
 export function setUiVisible(visible: boolean): void {
-	uiVisible = visible;
-	if (visible && restyleWanted) {
-		restyleWanted = false;
-		apply();
-	}
+        uiVisible = visible;
+        if (visible && restyleWanted) {
+                restyleWanted = false;
+                apply();
+        }
 }
 
 /**
@@ -456,19 +466,19 @@ export function setUiVisible(visible: boolean): void {
  * frozen into the cache at decode time (#137).
  */
 function setArtVars(c: { h: number; hex: string }): void {
-	if (theme.id === 'material') {
-		const seed = m3Seed(c.hex);
-		if (seed) {
-			document.documentElement.style.setProperty('--m3-seed-h', seed.h);
-			document.documentElement.style.setProperty('--m3-c', seed.c);
-			document.documentElement.style.setProperty('--hue', seed.h);
-		}
-		return;
-	}
-	// AMOLED stays black in light mode (layout.css), so the tint and the accent band stay dark too.
-	setAccentVars(toAccent(c.hex, darkMode || theme.id === 'amoled'));
-	document.documentElement.style.setProperty('--art-h', c.h.toFixed(1));
-	document.documentElement.classList.add(TINT_CLASS);
+        if (theme.id === 'material') {
+                const seed = m3Seed(c.hex);
+                if (seed) {
+                        document.documentElement.style.setProperty('--m3-seed-h', seed.h);
+                        document.documentElement.style.setProperty('--m3-c', seed.c);
+                        document.documentElement.style.setProperty('--hue', seed.h);
+                }
+                return;
+        }
+        // AMOLED stays black in light mode (layout.css), so the tint and the accent band stay dark too.
+        setAccentVars(toAccent(c.hex, darkMode || theme.id === 'amoled'));
+        document.documentElement.style.setProperty('--art-h', c.h.toFixed(1));
+        document.documentElement.classList.add(TINT_CLASS);
 }
 
 /**
@@ -477,51 +487,51 @@ function setArtVars(c: { h: number; hex: string }): void {
  * track's colour paints this one in a cover it doesn't have (#522).
  */
 export function applyArtworkAccent(url: string | undefined | null): void {
-	wanted = url ?? '';
-	if (!url) {
-		if (art) {
-			art = null;
-			restyle();
-		}
-		return;
-	}
-	artworkAccent(url).then((hex) => {
-		if (wanted !== url) return; // a faster track change already won
-		const hsv = hex ? hexToHsv(hex) : null;
-		const next = hsv ? { h: hsv.h, hex: hex! } : null;
-		if (art?.hex === next?.hex) return; // same colour (a repeat, the queue moved), or theme already
-		art = next;
-		restyle(); // through the normal path, so `effective` and the pickers agree
-	});
+        wanted = url ?? '';
+        if (!url) {
+                if (art) {
+                        art = null;
+                        restyle();
+                }
+                return;
+        }
+        artworkAccent(url).then((hex) => {
+                if (wanted !== url) return; // a faster track change already won
+                const hsv = hex ? hexToHsv(hex) : null;
+                const next = hsv ? { h: hsv.h, hex: hex! } : null;
+                if (art?.hex === next?.hex) return; // same colour (a repeat, the queue moved), or theme already
+                art = next;
+                restyle(); // through the normal path, so `effective` and the pickers agree
+        });
 }
 
 /** Re-band the artwork accent after a light/dark flip. No restyle when the setting is off. */
 export function refreshArtworkAccent(dark: boolean): void {
-	darkMode = dark;
-	if (art) restyle();
+        darkMode = dark;
+        if (art) restyle();
 }
 
 /** Decode a cover the user is about to hear, so its colour is ready the instant the track flips. */
 export function prewarmArtworkAccent(url: string | undefined | null): void {
-	if (url) warmAccent(url);
+        if (url) warmAccent(url);
 }
 
 function applyMatugenTheme(css: string | null): void {
-	let style = document.getElementById(MATUGEN_STYLE_ID) as HTMLStyleElement | null;
-	if (!css) {
-		style?.remove();
-		document.documentElement.classList.remove('matugen-theme');
-		apply();
-		return;
-	}
-	if (!style) {
-		style = document.createElement('style');
-		style.id = MATUGEN_STYLE_ID;
-		document.head.prepend(style);
-	}
-	style.textContent = css;
-	document.documentElement.classList.add('matugen-theme');
-	apply();
+        let style = document.getElementById(MATUGEN_STYLE_ID) as HTMLStyleElement | null;
+        if (!css) {
+                style?.remove();
+                document.documentElement.classList.remove('matugen-theme');
+                apply();
+                return;
+        }
+        if (!style) {
+                style = document.createElement('style');
+                style.id = MATUGEN_STYLE_ID;
+                document.head.prepend(style);
+        }
+        style.textContent = css;
+        document.documentElement.classList.add('matugen-theme');
+        apply();
 }
 
 let matugenUnlisten: (() => void) | null = null;
@@ -529,84 +539,84 @@ let matugenQueue = Promise.resolve();
 
 /** Start or stop following the Matugen file to match the switch. Queued, so a fast off/on can't interleave. */
 export function syncMatugen(): Promise<void> {
-	matugenQueue = matugenQueue
-		.then(async () => {
-			if (appearance.matugen && !matugenUnlisten) {
-				matugenUnlisten = await onMatugenThemeChanged(applyMatugenTheme);
-				await startMatugenWatcher();
-				applyMatugenTheme(await getMatugenTheme());
-			} else if (!appearance.matugen && matugenUnlisten) {
-				matugenUnlisten();
-				matugenUnlisten = null;
-				await stopMatugenWatcher();
-				applyMatugenTheme(null);
-			}
-		})
-		.catch((e) => logUi('error', `Matugen: ${String(e)}`));
-	return matugenQueue;
+        matugenQueue = matugenQueue
+                .then(async () => {
+                        if (appearance.matugen && !matugenUnlisten) {
+                                matugenUnlisten = await onMatugenThemeChanged(applyMatugenTheme);
+                                await startMatugenWatcher();
+                                applyMatugenTheme(await getMatugenTheme());
+                        } else if (!appearance.matugen && matugenUnlisten) {
+                                matugenUnlisten();
+                                matugenUnlisten = null;
+                                await stopMatugenWatcher();
+                                applyMatugenTheme(null);
+                        }
+                })
+                .catch((e) => logUi('error', `Matugen: ${String(e)}`));
+        return matugenQueue;
 }
 
 /** Apply the stored theme + customization on startup (defaults to the default palette, no overrides). */
 export function initTheme(): void {
-	const stored = localStorage.getItem(KEY);
-	theme.id = THEMES.some((t) => t.id === stored) ? (stored as ThemeId) : 'default';
-	try {
-		const saved = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '{}');
-		// Only keys we know about, only the shape we expect: a hand-edited or older localStorage
-		// entry must not be able to write arbitrary properties into the inline style.
-		for (const k of ['accent', 'fontSans', 'fontHeading'] as const) {
-			if (typeof saved?.[k] === 'string') custom[k] = saved[k];
-		}
-		for (const k of ['hue', 'radius'] as const) {
-			if (typeof saved?.[k] === 'number') custom[k] = saved[k];
-		}
-		if (Array.isArray(saved?.fontFiles)) {
-			custom.fontFiles = saved.fontFiles.filter((p: unknown) => typeof p === 'string');
-		}
-	} catch {
-		// unparseable — start clean
-	}
-	if (stored && stored in LEGACY_ACCENTS) {
-		const hex = LEGACY_ACCENTS[stored];
-		if (hex && !custom.accent) {
-			custom.accent = hex;
-			persist();
-		}
-		localStorage.setItem(KEY, theme.id); // migrated once, not on every launch
-	}
-	try {
-		const saved = JSON.parse(localStorage.getItem(APPEARANCE_KEY) ?? '{}');
-		for (const k of [
-			'artworkBackground',
-			'blurPlaylistHeader',
-			'nowPlayingPill',
-			'classicPlayer',
-			'tabbedPlayer',
-			'openPlayerOnPlay',
-			'emptyClickTogglesPlayer',
-			'artworkAccent',
-			'theaterLyrics',
-			'theaterQueue',
-			'matugen',
-			'enhancedLyrics',
-			'enhancedLyricsLineSync'
-		] as const) {
-			if (typeof saved?.[k] === 'boolean') appearance[k] = saved[k];
-		}
-		if (LYRICS_ANIMS.includes(saved?.lyricsAnim)) appearance.lyricsAnim = saved.lyricsAnim;
-		if (LYRICS_STYLES.includes(saved?.lyricsStyle)) appearance.lyricsStyle = saved.lyricsStyle;
-		if (typeof saved?.lyricsAnimStrength === 'number') {
-			appearance.lyricsAnimStrength = Math.min(200, Math.max(25, saved.lyricsAnimStrength));
-		}
-		if (typeof saved?.lyricsGlow === 'number') {
-			appearance.lyricsGlow = Math.min(100, Math.max(0, saved.lyricsGlow));
-		}
-	} catch {
-		// unparseable — keep the defaults
-	}
-	apply();
-	if (appearance.matugen) syncMatugen();
-	// Async (each file needs its URL granted first), so the app paints in the fallback font for a
-	// frame or two before a loaded font swaps in.
-	if (custom.fontFiles.length) registerFontFiles();
+        const stored = localStorage.getItem(KEY);
+        theme.id = THEMES.some((t) => t.id === stored) ? (stored as ThemeId) : 'default';
+        try {
+                const saved = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '{}');
+                // Only keys we know about, only the shape we expect: a hand-edited or older localStorage
+                // entry must not be able to write arbitrary properties into the inline style.
+                for (const k of ['accent', 'fontSans', 'fontHeading'] as const) {
+                        if (typeof saved?.[k] === 'string') custom[k] = saved[k];
+                }
+                for (const k of ['hue', 'radius'] as const) {
+                        if (typeof saved?.[k] === 'number') custom[k] = saved[k];
+                }
+                if (Array.isArray(saved?.fontFiles)) {
+                        custom.fontFiles = saved.fontFiles.filter((p: unknown) => typeof p === 'string');
+                }
+        } catch {
+                // unparseable — start clean
+        }
+        if (stored && stored in LEGACY_ACCENTS) {
+                const hex = LEGACY_ACCENTS[stored];
+                if (hex && !custom.accent) {
+                        custom.accent = hex;
+                        persist();
+                }
+                localStorage.setItem(KEY, theme.id); // migrated once, not on every launch
+        }
+        try {
+                const saved = JSON.parse(localStorage.getItem(APPEARANCE_KEY) ?? '{}');
+                for (const k of [
+                        'artworkBackground',
+                        'blurPlaylistHeader',
+                        'nowPlayingPill',
+                        'classicPlayer',
+                        'tabbedPlayer',
+                        'openPlayerOnPlay',
+                        'emptyClickTogglesPlayer',
+                        'artworkAccent',
+                        'theaterLyrics',
+                        'theaterQueue',
+                        'matugen',
+                        'enhancedLyrics',
+                        'enhancedLyricsLineSync'
+                ] as const) {
+                        if (typeof saved?.[k] === 'boolean') appearance[k] = saved[k];
+                }
+                if (LYRICS_ANIMS.includes(saved?.lyricsAnim)) appearance.lyricsAnim = saved.lyricsAnim;
+                if (LYRICS_STYLES.includes(saved?.lyricsStyle)) appearance.lyricsStyle = saved.lyricsStyle;
+                if (typeof saved?.lyricsAnimStrength === 'number') {
+                        appearance.lyricsAnimStrength = Math.min(200, Math.max(25, saved.lyricsAnimStrength));
+                }
+                if (typeof saved?.lyricsGlow === 'number') {
+                        appearance.lyricsGlow = Math.min(100, Math.max(0, saved.lyricsGlow));
+                }
+        } catch {
+                // unparseable — keep the defaults
+        }
+        apply();
+        if (appearance.matugen) syncMatugen();
+        // Async (each file needs its URL granted first), so the app paints in the fallback font for a
+        // frame or two before a loaded font swaps in.
+        if (custom.fontFiles.length) registerFontFiles();
 }

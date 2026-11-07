@@ -20,8 +20,38 @@ use tauri::{AppHandle, Emitter};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::http::header::SEC_WEBSOCKET_PROTOCOL;
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+pub mod bitchord;
+
+/// Which protocol the session speaks. `limusic` is the built-in relay (context/19); `bitchord` is
+/// the BitChord party server (bitchord.rs), so limusic can sit in the same rooms the BitChord
+/// desktop/web players host. Picked in the Listen Together dialog; the empty setting means the
+/// relay, which keeps every existing install where it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ServerKind {
+    #[default]
+    Limusic,
+    BitChord,
+}
+
+impl ServerKind {
+    pub fn from_setting(v: Option<&str>) -> Self {
+        match v {
+            Some("bitchord") => ServerKind::BitChord,
+            _ => ServerKind::Limusic,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ServerKind::Limusic => "limusic",
+            ServerKind::BitChord => "bitchord",
+        }
+    }
+}
 
 /// Playback intents the connection hands to the bridge task to apply to the local player.
 #[derive(Debug, Clone)]
@@ -100,6 +130,9 @@ struct Inner {
     requesting: bool,
     role: Role,
     server_url: String,
+    /// Which protocol the room on the other end speaks. Never changes mid-room: the dialog
+    /// disables the pick while a room is up.
+    kind: ServerKind,
     room_code: Option<String>,
     my_id: Option<String>,
     session_token: Option<String>,
@@ -109,6 +142,42 @@ struct Inner {
     pending_joins: Vec<(String, String)>, // (user_id, username)
     suggestions: Vec<Suggestion>,
     outbound: Option<mpsc::UnboundedSender<ClientMessage>>,
+
+    // --- BitChord-mode state (bitchord.rs) ------------------------------------------------
+    /// The REST membership token; rides the socket handshake as a subprotocol.
+    bc_token: Option<String>,
+    /// The REST base the room was made on (with the scheme; the socket URL is derived from it).
+    bc_base: Option<String>,
+    /// The name create/join was asked with, held for the run loop's identity payload.
+    bc_display_name: String,
+    /// Whether the room locks control to its host (BitChord's `hostOnlyControl`). Only then is a
+    /// limusic guest actually locked — an unlocked room lets every member drive, as BitChord does.
+    bc_host_only: bool,
+    /// The last `state` frame applied, for seq gating and drift correction.
+    bc_mirror: BcMirror,
+    /// The room queue's own seq, so a missed frame is healed instead of lived with.
+    bc_queue_seq: i64,
+    /// Where the BitChord queue's playing row sits (its queue carries the whole timeline).
+    bc_queue_index: usize,
+    /// Clock sync (NTP over the ping/pong pairs), best-smallest-RTT sample wins.
+    bc_offset_ms: Option<i64>,
+    bc_rtt_ms: i64,
+    /// The last position a correction was applied at, so drift is measured, not guessed.
+    bc_last_applied_ms: i64,
+    /// BitChord's socket takes raw JSON strings, not the relay's typed messages.
+    bc_outbound: Option<mpsc::UnboundedSender<String>>,
+}
+
+/// The last BitChord `state` frame the client applied (bitchord.rs). Seq-gated upstream, so a
+/// stale frame can't roll the room back.
+#[derive(Default, Clone)]
+pub struct BcMirror {
+    pub seq: i64,
+    pub track_id: Option<String>,
+    pub is_playing: bool,
+    pub position_ms: i64,
+    pub anchor_ms: i64,
+    pub effective_position_ms: i64,
 }
 
 impl Default for Role {
@@ -128,7 +197,7 @@ impl Inner {
         }
     }
 
-    /// Clear all room membership (leave / kicked / fatal). Keeps `server_url`.
+    /// Clear all room membership (leave / kicked / fatal). Keeps `server_url` and the kind.
     fn reset_room(&mut self) {
         self.role = Role::None;
         self.room_code = None;
@@ -143,6 +212,16 @@ impl Inner {
         self.status_connected = false;
         self.connecting = false;
         self.requesting = false;
+        self.bc_token = None;
+        self.bc_base = None;
+        self.bc_host_only = false;
+        self.bc_mirror = BcMirror::default();
+        self.bc_queue_seq = 0;
+        self.bc_queue_index = 0;
+        self.bc_offset_ms = None;
+        self.bc_rtt_ms = 0;
+        self.bc_last_applied_ms = -1;
+        self.bc_outbound = None;
     }
 
     fn absorb(&mut self, state: &RoomState) {
@@ -187,14 +266,38 @@ impl LtSession {
         self.emit_state().await;
     }
 
-    /// True when we're in a room in any role.
+    /// Which protocol the next room speaks. Refused mid-room (the dialog disables the pick there
+    /// anyway): switching protocols under a live room would strand half the members.
+    pub async fn set_kind(&self, kind: ServerKind) -> Result<(), String> {
+        let mut inner = self.inner.lock().await;
+        if inner.role != Role::None {
+            return Err("Leave the room before switching server kind.".into());
+        }
+        inner.kind = kind;
+        drop(inner);
+        self.emit_state().await;
+        Ok(())
+    }
+
+    pub async fn kind(&self) -> ServerKind {
+        self.inner.lock().await.kind
+    }
+
     pub async fn in_room(&self) -> bool {
         self.inner.lock().await.role != Role::None
     }
 
-    /// True when we're a guest in a room — the caller should block local playback control.
+    /// True when we're a guest whose transport should be blocked locally. In a BitChord room that
+    /// is only the host-only lock — an unlocked BitChord room lets every member drive (the server
+    /// enforces its own rules), so transport flows locally and broadcasts as control frames.
     pub async fn is_guest(&self) -> bool {
-        self.inner.lock().await.role == Role::Guest
+        let inner = self.inner.lock().await;
+        match inner.kind {
+            ServerKind::Limusic => inner.role == Role::Guest,
+            ServerKind::BitChord => {
+                inner.role == Role::Guest && inner.bc_host_only
+            }
+        }
     }
 
     pub async fn is_host(&self) -> bool {
@@ -208,15 +311,28 @@ impl LtSession {
         inner.users.iter().find(|u| u.user_id == me).map(|u| u.username.clone())
     }
 
-    /// Host: broadcast a playback action to the room. No-op unless we're the host and connected.
+    /// Host: broadcast a playback action to the room. In a BitChord room every member publishes
+    /// intents as `control` frames and the server enforces its own host-only rule, so the limusic
+    /// host gate only applies to the limusic relay.
     pub async fn broadcast_playback(&self, mut p: Playback) {
         keep_shareable(&mut p);
         let inner = self.inner.lock().await;
-        if inner.role != Role::Host {
-            return;
-        }
-        if let Some(tx) = &inner.outbound {
-            let _ = tx.send(ClientMessage::Playback(p));
+        match inner.kind {
+            ServerKind::Limusic => {
+                if inner.role != Role::Host {
+                    return;
+                }
+                if let Some(tx) = &inner.outbound {
+                    let _ = tx.send(ClientMessage::Playback(p));
+                }
+            }
+            ServerKind::BitChord => {
+                if inner.role == Role::None {
+                    return;
+                }
+                drop(inner);
+                self.bc_broadcast_playback(p).await;
+            }
         }
     }
 
@@ -227,15 +343,52 @@ impl LtSession {
         }
     }
 
+    /// Send a raw JSON frame on the BitChord socket (best-effort). Callers must not hold the inner
+    /// lock: this takes it.
+    async fn send_raw(&self, frame: String) {
+        if let Some(tx) = &self.inner.lock().await.bc_outbound {
+            let _ = tx.send(frame);
+        }
+    }
+
     pub async fn create_room(self: &Arc<Self>, username: String) {
-        self.start(ClientMessage::CreateRoom { username }).await;
+        if self.inner.lock().await.kind == ServerKind::BitChord {
+            self.start_bitchord(bitchord::BcMode::Create, username).await;
+        } else {
+            self.start(ClientMessage::CreateRoom { username }).await;
+        }
     }
 
     pub async fn join_room(self: &Arc<Self>, code: String, username: String) {
-        self.start(ClientMessage::JoinRoom { room_code: code, username }).await;
+        if self.inner.lock().await.kind == ServerKind::BitChord {
+            self.start_bitchord(bitchord::BcMode::Join(code), username).await;
+        } else {
+            self.start(ClientMessage::JoinRoom { room_code: code, username }).await;
+        }
+    }
+
+    /// BitChord rooms: same reset/announce shape as [`start`], then the protocol's own run loop.
+    async fn start_bitchord(self: &Arc<Self>, mode: bitchord::BcMode, username: String) {
+        self.gen.fetch_add(1, Ordering::SeqCst);
+        {
+            let mut inner = self.inner.lock().await;
+            inner.reset_room();
+            inner.connecting = true;
+            inner.requesting = true;
+            inner.bc_display_name = username;
+        }
+        self.emit_state().await;
+        let gen = self.gen.load(Ordering::SeqCst);
+        let me = self.clone();
+        tokio::spawn(async move {
+            bitchord::run(me, gen, mode).await;
+        });
     }
 
     pub async fn approve_join(&self, user_id: String) {
+        if self.inner.lock().await.kind == ServerKind::BitChord {
+            return; // BitChord has no join approval step
+        }
         self.send(ClientMessage::ApproveJoin { user_id }).await;
     }
     pub async fn reject_join(&self, user_id: String) {
@@ -244,17 +397,35 @@ impl LtSession {
             let mut inner = self.inner.lock().await;
             inner.pending_joins.retain(|(id, _)| id != &user_id);
         }
+        if self.inner.lock().await.kind == ServerKind::BitChord {
+            self.emit_state().await;
+            return; // BitChord has no join approval step
+        }
         self.send(ClientMessage::RejectJoin { user_id }).await;
         self.emit_state().await;
     }
     pub async fn kick(&self, user_id: String) {
+        if self.inner.lock().await.kind == ServerKind::BitChord {
+            self.bc_kick(&user_id).await;
+            return;
+        }
         self.send(ClientMessage::KickUser { user_id }).await;
     }
     pub async fn transfer_host(&self, user_id: String) {
+        if self.inner.lock().await.kind == ServerKind::BitChord {
+            // BitChord's host is the room's creator; the protocol has no hand-over.
+            self.emit_notice("BitChord rooms can't hand over the host.").await;
+            return;
+        }
+        let _ = &user_id;
         self.send(ClientMessage::TransferHost { user_id }).await;
     }
     pub async fn suggest(&self, track: Track) {
         if !shareable(&track) {
+            return;
+        }
+        if self.inner.lock().await.kind == ServerKind::BitChord {
+            self.bc_suggest(&track).await;
             return;
         }
         self.send(ClientMessage::Suggest { track }).await;
@@ -285,6 +456,12 @@ impl LtSession {
 
     /// Leave the room and tear down the connection.
     pub async fn leave(&self) {
+        let kind = self.inner.lock().await.kind;
+        if kind == ServerKind::BitChord {
+            // Release the seat explicitly: the socket close alone leaves it held until the
+            // server's grace lapses, exactly what BitChord's releaseSlot does.
+            self.bc_release_slot().await;
+        }
         self.send(ClientMessage::LeaveRoom).await;
         self.gen.fetch_add(1, Ordering::SeqCst); // cancel the connection loop
         self.inner.lock().await.reset_room();
@@ -701,13 +878,17 @@ impl LtSession {
             "status": inner.status().as_str(),
             "role": role,
             "requesting": inner.requesting,
+            "serverKind": inner.kind.as_str(),
             "roomCode": inner.room_code,
             "myId": inner.my_id,
             "serverUrl": inner.server_url,
             // Sent so the settings panel can show what "the default" actually is once the user
             // opens it. `serverUrl` stays empty until they pick their own, which is what keeps the
             // address off every other screen.
-            "defaultServerUrl": DEFAULT_SERVER,
+            "defaultServerUrl": match inner.kind {
+                ServerKind::Limusic => DEFAULT_SERVER,
+                ServerKind::BitChord => bitchord::BITCHORD_DEFAULT_SERVER,
+            },
             "users": inner.users,
             "currentTrack": inner.current_track,
             "queue": inner.queue,
@@ -789,7 +970,28 @@ const SILENCE_LIMIT: Duration = Duration::from_secs(60);
 /// IPv6 burned six minutes on dead addresses before ever trying the IPv4 that works. Same reason a
 /// join request never reached the host: the socket carrying it was still in a SYN retry.
 async fn connect_ws(url: &str) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, WsError> {
-    let req = url.into_client_request()?;
+    connect_ws_protocols(url, &[]).await
+}
+
+/// Same as [`connect_ws`], with the subprotocols a BitChord handshake carries its auth token in
+/// (`bitchord.v1` + `bitchord.token.<token>` — a browser can't set WS headers, so the original
+/// rides them in the subprotocol list, and the server expects them there).
+async fn connect_ws_protocols(
+    url: &str,
+    protocols: &[String],
+) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, WsError> {
+    let mut req = url.into_client_request()?;
+    if !protocols.is_empty() {
+        req.headers_mut().insert(
+            SEC_WEBSOCKET_PROTOCOL,
+            protocols.join(", ").parse().map_err(|_| {
+                WsError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "bad subprotocol header",
+                ))
+            })?,
+        );
+    }
     let uri = req.uri().clone();
     let host = uri
         .host()

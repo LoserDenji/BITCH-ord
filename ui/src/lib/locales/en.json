@@ -473,6 +473,8 @@
 			"language_contribute": "Help translate Limusic",
 			"shortcuts_hint": "Open the keyboard shortcuts with {key}",
 			"play_on_start": "Resume playback on open",
+			"dynamic_island": "Dynamic island",
+			"dynamic_island_hint": "A floating now-playing pill pinned to the top of the screen while Limusic is in the background. Click it to expand the card; right-click sends it away until you come back.",
 			"play_on_start_hint": "Start playing your last queue when Limusic opens.",
 			"autostart": "Launch on startup",
 			"autostart_hint": "Automatically start Limusic when your system boots.",
@@ -535,6 +537,7 @@
 			"lyrics_anim_wave": "Wave",
 			"lyrics_anim_pop": "Pop",
 			"lyrics_anim_slide": "Slide",
+			"lyrics_anim_wipe": "BitChord wipe",
 			"lyrics_anim_none": "None",
 			"lyrics_style": "Highlight style",
 			"lyrics_style_hint": "How sung words fill and highlight across the line.",
@@ -632,6 +635,12 @@
 			"lyrics_sources_none": "Every source is off, so no lyrics will be found.",
 			"lyrics_prefer_words": "Prefer word-by-word lyrics",
 			"lyrics_prefer_words_hint": "Word-by-word lyrics from any source beat line-by-line ones from a source above it. The first time a song plays, its lyrics can take a few seconds longer to appear."
+		},
+		"interface": {
+			"player_style": "Player bar style",
+			"player_style_hint": "The transport bar at the bottom: Limusic’s own, or the floating glass pill from the BitChord player.",
+			"player_style_limusic": "Limusic",
+			"player_style_bitchord": "BitChord glass"
 		},
 		"hotkeys": {
 			"title": "Global Hotkeys",
@@ -1008,6 +1017,11 @@
 			"host_blurb": "You get a short code to share. Everyone who joins hears exactly what you play, in sync.",
 			"share_hint": "Send this to anyone you want to listen with.",
 			"change_server": "Change server",
+			"server_kind": "Party server",
+			"server_kind_limusic": "Limusic",
+			"server_kind_bitchord": "BitChord",
+			"server_kind_hint": "BitChord rooms join the party server the BitChord apps use; Limusic rooms use Limusic’s own relay. A BitChord invite looks like CODE@bitchord.",
+			"bitchord_server_placeholder": "https://api.bitchord.kushagrasingh.in",
 			"custom_server": "Custom",
 			"use_default": "Use the default",
 			"approve": "Let in",

@@ -2757,6 +2757,13 @@ impl AppState {
         f64::from_bits(self.latest_position.load(Ordering::SeqCst))
     }
 
+    /// Mirror of mpv's pause flag, the one `playback-state` reports. The island's transport resolves
+    /// explicit play/pause presses against it so its button and the app's can't disagree (media.rs
+    /// reads the same flag for MPRIS).
+    pub fn is_paused(&self) -> bool {
+        !self.is_playing.load(Ordering::Relaxed)
+    }
+
     /// Advance/rewind the queue (OS "next"/"previous" keys + the UI's skip buttons). `play_index`
     /// itself no-ops for guests.
     pub async fn next_in_queue(self: &std::sync::Arc<Self>) {

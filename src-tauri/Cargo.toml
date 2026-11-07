@@ -87,6 +87,14 @@ tauri = { version = "2", features = ["test"] }
 # mac-notification-sys and tao already pull in.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+# The Dynamic Island's atomic window geometry (island.rs): one `setFrame:display:` carrying position
+# and size together, where tao's async `set_size` + `set_position` would present the morph in two
+# frames. NSGeometry is the only feature needed; the crate pairs with the objc2 0.6 above.
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSGeometry",
+  "objc2-core-foundation",
+] }
 
 # Taskbar thumbnail toolbar (#47). Same `windows` version tauri-runtime-wry already pulls in, so
 # `Window::hwnd()` hands us a matching HWND.
